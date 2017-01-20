@@ -32,6 +32,14 @@ class Cascade(TollElement):
         raise NotImplementedError("Haven't yet implemented this cascade's " +
                                   "compute_dist() function")
 
+    def compute_output_num(self):
+        raise NotImplementedError("Haven't yet implemented this cascade's " +
+                                  "compute_output_num() function")
+
+    def compute_input_num(self):
+        raise NotImplementedError("Haven't yet implemented this cascade's " +
+                                  "compute_input_num() function")
+
     def compute_ratio(self):
         inputs = sum(a.compute_dist().h for a in self.elements)
         outputs = sum(tv.h for tv in self.compute_dist())
@@ -54,6 +62,12 @@ class LCascade(Cascade):
         a_b = min(s_b / s_max, 1)
         return (TV(b.h + a_b * a.h, b.v),)
 
+    def compute_input_num(self):
+        return 2
+
+    def compute_output_num(self):
+        return 1
+
 
 class RCascade(Cascade):
 
@@ -70,6 +84,12 @@ class RCascade(Cascade):
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
         return (TV(b.h + a_b * a.h, b.v),)
+
+    def compute_input_num(self):
+        return 2
+
+    def compute_output_num(self):
+        return 1
 
 
 class TriCascade(Cascade):
@@ -91,6 +111,12 @@ class TriCascade(Cascade):
         a_2 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * c.h)) - L), 1)
 
         return (TV(b.h + a_1 * c.h + a_2 * a.h, b.v), )
+
+    def compute_input_num(self):
+        return 3
+
+    def compute_output_num(self):
+        return 1
 
 
 class DivCascade(Cascade):
@@ -115,6 +141,12 @@ class DivCascade(Cascade):
             TV(a.h + H(alpha(a) - alpha(c)) * alpha(a) * b.h, b.h),
             TV(c.h + H(alpha(c) - alpha(a)) * alpha(c) * b.h, b.h)
         )
+
+    def compute_input_num(self):
+        return 3
+
+    def compute_output_num(self):
+        return 2
 
 if __name__ == '__main__':
     a = DivCascade(
