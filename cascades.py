@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from collections import namedtuple
+from random import random
 
 TV = namedtuple('TV', 'h v')
 LaneParams = namedtuple('LaneParams', 'h v')
@@ -71,7 +72,7 @@ class LCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV(b.h + a_b * a.h, b.v),)
+        return (TV((1 - a_b) * b.h + a_b * a.h, b.v),)
 
     def compute_input_num(self):
         return 2
@@ -98,7 +99,7 @@ class RCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV(b.h + a_b * a.h, b.v),)
+        return (TV((1 - a_b) * b.h + a_b * a.h, b.v),)
 
     def compute_input_num(self):
         return 2
@@ -122,6 +123,8 @@ class TriCascade(Cascade):
         b = self.elements[1].compute_dist()
         c = self.elements[2].compute_dist()
 
+        alpha = lambda t: min((t.v / t.h - L) / s_max, 1)
+
         L = g.L
         s_max = g.s_max
 
@@ -129,7 +132,7 @@ class TriCascade(Cascade):
         a_1 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * a.h)) - L), 1)
         a_2 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * c.h)) - L), 1)
 
-        return (TV(b.h + a_1 * c.h + a_2 * a.h, b.v), )
+        return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h, b.v), )
 
     def compute_input_num(self):
         return 3
@@ -150,7 +153,6 @@ class DivCascade(Cascade):
 
     def compute_dist(self):
         global g
-        H = lambda x: 1 if x > 0 else (1 / 2) if x == 0 else 0
         alpha = lambda t: min((t.v / t.h - L) / s_max, 1)
 
         a = self.elements[0].compute_dist()
@@ -160,10 +162,13 @@ class DivCascade(Cascade):
         L = g.L
         s_max = g.s_max
 
+        a_1 = (alpha(a) / (alpha(a) + alpha(c)))
+        a_2 = 1 - a_1
+
         # Fix speed
         return (
-            TV(a.h + H(alpha(a) - alpha(c)) * alpha(a) * b.h, b.v),
-            TV(c.h + H(alpha(c) - alpha(a)) * alpha(c) * b.h, b.v)
+            TV(alpha(a) * a.h + a_1 * alpha(a) * b.h, b.v),
+            TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, b.v)
         )
 
     def compute_input_num(self):
@@ -217,11 +222,16 @@ def generate(input_lanes, target_number, structures=[]):
     return possibilities
 
 if __name__ == '__main__':
-    a = [Lane(LaneParams(0.2, 29)) for a in range(8)]
+    max_acceptable = 0.1765 * 10
+    min_acceptable = 0.036095
+
+    a = [Lane(LaneParams(
+        random() * (max_acceptable - min_acceptable) + min_acceptable, 29))
+        for a in range(9)]
     best_score = 0
     best = None
     input_h = sum(lane.compute_dist().h for lane in a)
-    for config in generate(a, 3):
+    for config in generate(a, 5):
         output_h = sum(lane.compute_dist().h for lane in config[0])
         score = output_h / input_h
         if best_score < score:
