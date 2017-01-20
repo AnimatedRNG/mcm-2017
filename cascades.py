@@ -2,7 +2,11 @@
 
 from collections import namedtuple
 
-LaneParams = namedtuple('LaneParams', 'prob')
+TV = namedtuple('TV', 'h v')
+LaneParams = namedtuple('LaneParams', 'h v')
+GlobalParams = namedtuple('GlobalParams', 's_max L')
+
+g = GlobalParams(96, 4.8)
 
 
 class TollElement(object):
@@ -15,7 +19,7 @@ class Lane(TollElement):
         self.params = params
 
     def compute_dist(self):
-        return self.params.prob
+        return TV(self.params.h, self.params.v)
 
 
 class Cascade(TollElement):
@@ -28,6 +32,11 @@ class Cascade(TollElement):
         raise NotImplementedError("Haven't yet implemented this cascade's " +
                                   "compute_dist() function")
 
+    def compute_ratio(self):
+        inputs = sum(a.compute_dist().h for a in self.elements)
+        outputs = sum(tv.h for tv in self.compute_dist())
+        return outputs / inputs
+
 
 class LCascade(Cascade):
 
@@ -35,9 +44,15 @@ class LCascade(Cascade):
         super(LCascade, self).__init__((left, right), params)
 
     def compute_dist(self):
-        alpha = self.elements[0].compute_dist()
-        beta = self.elements[1].compute_dist()
-        return (beta + (1 - beta) * alpha,)
+        a = self.elements[0].compute_dist()
+        b = self.elements[1].compute_dist()
+
+        L = g.L
+        s_max = g.s_max
+
+        s_b = b.v / b.h - L
+        a_b = min(s_b / s_max, 1)
+        return (TV(b.h + a_b * a.h, b.v),)
 
 
 class RCascade(Cascade):
@@ -46,9 +61,15 @@ class RCascade(Cascade):
         super(RCascade, self).__init__((left, right), params)
 
     def compute_dist(self):
-        alpha = self.elements[1].compute_dist()
-        beta = self.elements[0].compute_dist()
-        return (beta + (1 - beta) * alpha,)
+        a = self.elements[1].compute_dist()
+        b = self.elements[0].compute_dist()
+
+        L = g.L
+        s_max = g.s_max
+
+        s_b = b.v / b.h - L
+        a_b = min(s_b / s_max, 1)
+        return (TV(b.h + a_b * a.h, b.v),)
 
 
 class TriCascade(Cascade):
@@ -57,12 +78,19 @@ class TriCascade(Cascade):
         super(TriCascade, self).__init__((left, middle, right), params)
 
     def compute_dist(self):
-        alpha = self.elements[0].compute_dist()
-        beta = self.elements[1].compute_dist()
-        gamma = selfelements[2].compute_dist()
-        return (beta +
-                (1 - beta) * (1 - alpha) * gamma +
-                (1 - beta) * (1 - gamma) * alpha,)
+        global g
+        a = self.elements[0].compute_dist()
+        b = self.elements[1].compute_dist()
+        c = self.elements[2].compute_dist()
+
+        L = g.L
+        s_max = g.s_max
+
+        # Fix speed
+        a_1 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * a.h)) - L), 1)
+        a_2 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * c.h)) - L), 1)
+
+        return (TV(b.h + a_1 * c.h + a_2 * a.h, b.v), )
 
 
 class DivCascade(Cascade):
@@ -71,17 +99,28 @@ class DivCascade(Cascade):
         super(DivCascade, self).__init__((left, middle, right), params)
 
     def compute_dist(self):
-        alpha = self.elements[0].compute_dist()
-        beta = self.elements[1].compute_dist()
-        gamma = self.elements[2].compute_dist()
-        right = (gamma +
-                 (1 - gamma) * alpha * beta +
-                 (1 / 2) * (1 - beta) * (1 - alpha) * beta)
-        left = (alpha +
-                (1 - alpha) * gamma * beta +
-                (1 / 2) * (1 - beta) * (1 - gamma) * beta)
-        return (left, right)
+        global g
+        H = lambda x: 1 if x > 0 else (1 / 2) if x == c else 0
+        alpha = lambda t: min((t.v / t.h - L) / s_max, 1)
+
+        a = self.elements[0].compute_dist()
+        b = self.elements[1].compute_dist()
+        c = self.elements[2].compute_dist()
+
+        L = g.L
+        s_max = g.s_max
+
+        # Fix speed
+        return (
+            TV(a.h + H(alpha(a.h, a.v) - alpha(c.h, c.v))
+               * alpha(b.h, b.v) * a.h, b.h),
+            TV(c.h + H(alpha(c.h, c.v) - alpha(a.h, a.v))
+               * alpha(b.h, b.v) * c.h, b.h)
+        )
 
 if __name__ == '__main__':
-    a = LCascade(Lane(LaneParams(0.5)), Lane(LaneParams(0.4)), None)
+    a = LCascade(
+        Lane(LaneParams(0.09, 29)),
+        Lane(LaneParams(0.09, 29)), None)
     print(a.compute_dist())
+    print(a.compute_ratio())
