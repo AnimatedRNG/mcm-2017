@@ -100,7 +100,7 @@ class DivCascade(Cascade):
 
     def compute_dist(self):
         global g
-        H = lambda x: 1 if x > 0 else (1 / 2) if x == c else 0
+        H = lambda x: 1 if x > 0 else (1 / 2) if x == 0 else 0
         alpha = lambda t: min((t.v / t.h - L) / s_max, 1)
 
         a = self.elements[0].compute_dist()
@@ -112,14 +112,13 @@ class DivCascade(Cascade):
 
         # Fix speed
         return (
-            TV(a.h + H(alpha(a.h, a.v) - alpha(c.h, c.v))
-               * alpha(b.h, b.v) * a.h, b.h),
-            TV(c.h + H(alpha(c.h, c.v) - alpha(a.h, a.v))
-               * alpha(b.h, b.v) * c.h, b.h)
+            TV(a.h + H(alpha(a) - alpha(c)) * alpha(a) * b.h, b.h),
+            TV(c.h + H(alpha(c) - alpha(a)) * alpha(c) * b.h, b.h)
         )
 
 if __name__ == '__main__':
-    a = LCascade(
+    a = DivCascade(
+        Lane(LaneParams(0.09, 29)),
         Lane(LaneParams(0.09, 29)),
         Lane(LaneParams(0.09, 29)), None)
     print(a.compute_dist())
