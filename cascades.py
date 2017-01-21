@@ -250,7 +250,7 @@ def randsol(input_lanes, target_number, structures = []):
         return (input_lanes, structures)
 
     else: # Much room
-        rand = int(3 * random())
+        rand = int(4 * random())
         if rand == 0: # Do LCascade
             index = int((len(input_lanes) - 1) * random())
             l_cas = LCascade(input_lanes[index], input_lanes[index+1], None)
@@ -273,51 +273,84 @@ def randsol(input_lanes, target_number, structures = []):
             structures.append(tri_cas)
         return randsol(input_lanes, target_number, structures)
 
-def random_ascent(input_lanes, target_number, N = 1000):
+def random_ascent(input_lanes, target_number, N = 1000000):
     y = randsol(input_lanes, target_number)
     input_h = sum(lane.compute_dist().h for lane in input_lanes)
     input_p = sum(lane.compute_dist().p for lane in input_lanes)
     output_h = sum(lane.compute_dist().h for lane in y[0])
     output_p = sum(lane.compute_dist().p for lane in y[0])
-    best_score = output_p / input_p # Could be p or h
+    best_score = output_h / input_h # Could be p or h
     best = y
     for i in range(N):
-        x = randsol(input_lanes, target_number)
+        x = randsol(input_lanes, target_number, [])
         output_h = sum(lane.compute_dist().h for lane in x[0])
         output_p = sum(lane.compute_dist().p for lane in x[0])
-        score = output_p / input_p
+        score = output_h / input_h
         if score > best_score:
             best_score = score
             best = x
     return (best, best_score)
-        
+
+def num_sols(num_in, num_out):
+    # Assumes num_out > 1
+    if num_in == num_out:
+        return 1
+    elif num_in == num_out + 1:
+        return 3 * num_out - 1
+    else:
+        prev = num_sols(num_in - 1, num_out)
+        return (3 * num_in - 4) * prev + (num_in - 2) * num_sols(num_in - 2, num_out)
+
+def format_number(solutions):
+    answer = str(solutions)
+    startIndex = len(answer) % 3
+    if startIndex == 0:
+        startIndex = 3
+    for i in range(startIndex, len(answer) + 4, 4):
+        answer = answer[:i] + ',' + answer[i:]
+    if answer[-1] == ',':
+        answer = answer[:-1]
+    return answer
+
 if __name__ == '__main__':
     max_acceptable = 0.1765 * 10
     min_acceptable = 0.036095
     a = []
     target_number = 5
-    car_length = 4.8
+    car_length = g.L
     for l in range(9):
         h = random() * (max_acceptable - min_acceptable) + min_acceptable
         v = 14.5
         p = h * car_length / v
         a.append(Lane(LaneParams(h, v, p)))
 
-    best, best_score = random_ascent(a, target_number)
-    print("{}:\n{}\n\n".format(best[1], best_score))
-    sys.exit()
-    
-    best_score = 0
-    best = None
+    #best, best_score = random_ascent(a, target_number)
+    #print("{}:\n{}\n\n".format(best[1][0:10], best_score))
+    #solutions = num_sols(20,5)
+    #print(format_number(answer))
+    #sys.exit()
+
+    top_n = 3 # Should be small
+    best_scores = [0] * top_n
+    best = [None] * top_n
     input_h = sum(lane.compute_dist().h for lane in a)
     input_p = sum(lane.compute_dist().p for lane in a)
-    possibilities = generate(a,target_number)
+    possibilities = generate(a, target_number)
+    
     print("Halfway")
     for config in possibilities:
         output_h = sum(lane.compute_dist().h for lane in config[0])
         output_p = sum(lane.compute_dist().p for lane in config[0])
-        score = output_p / input_p #Could be p or h
-        if best_score < score:
-            best_score = score
-            best = config
-    print("{}:\n{}\n\n".format(best[1], best_score))
+        score = output_h / input_h #Could be p or h
+        if best[-1] == None or best_scores[-1] < score:
+            index = top_n - 1
+            while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
+                index -= 1
+            if (index == 0) and (best_scores[0] < score):
+                index = -1
+            index += 1
+            best_scores = best_scores[:index] + [score] + best_scores[index:-1]
+            best = best[:index] + [config] + best[index:-1]
+    for i in range(top_n):
+        print("#" + str(i + 1) + ": {}:\n{}\n\n".format(best[i][1], best_scores[i]))
+    print(len(possibilities))
