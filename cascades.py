@@ -3,6 +3,9 @@
 from collections import namedtuple
 from random import random
 from uuid import uuid4
+from shutil import rmtree
+from os import mkdir
+from os.path import exists, join
 import sys
 from joblib import Parallel, delayed
 # sys.path.append('/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages')
@@ -13,9 +16,9 @@ from joblib import Parallel, delayed
 TV = namedtuple('TV', 'h v p')
 LaneParams = namedtuple('LaneParams', 'h v p num')
 CascadeParams = namedtuple('CascadeParams', 'm')
-GlobalParams = namedtuple('GlobalParams', 's_max L')
+GlobalParams = namedtuple('GlobalParams', 's_max L g1 g2')
 
-g = GlobalParams(140, 7.0)  # Used to be 96, 4.8
+g = GlobalParams(140, 7.0, 0, 1)  # Used to be 96, 4.8
 
 
 class TollElement(object):
@@ -37,6 +40,9 @@ class Lane(TollElement):
 
     def compute_dist(self):
         return TV(self.params.h, self.params.v, self.params.p)
+
+    def get_merging_lane_throughput(self):
+        return 0
 
     def compute_output_num(self):
         return 1
@@ -68,9 +74,16 @@ class Cascade(TollElement):
     def hash(self):
         return hash(this.get_name())
 
+    def get_merging_lane_throughput(self):
+        output_lanes_ids = [a.params.num for a in self.get_output_lanes()]
+        all_lanes = self.elements
+        merged_lanes = [
+            lane for lane in all_lanes if lane.params.num not in output_lanes_ids]
+        return sum(m.params.h for m in merged_lanes)
+
     def get_lanes(self):
         return [Lane(LaneParams(tv.h, tv.v, tv.p,
-                                self.get_output_lane_ids()[i]),
+                                self.get_output_lane_names()[i]),
                      self.get_output_lanes()[i].ID)
                 for i, tv in enumerate(self.compute_dist())]
 
@@ -96,7 +109,7 @@ class LCascade(Cascade):
     def get_output_lanes(self):
         return [self.elements[1]]
 
-    def get_output_lane_ids(self):
+    def get_output_lane_names(self):
         return [self.elements[1].params.num]
 
     def compute_dist(self):
@@ -137,7 +150,7 @@ class RCascade(Cascade):
     def get_output_lanes(self):
         return [self.elements[0]]
 
-    def get_output_lane_ids(self):
+    def get_output_lane_names(self):
         return [self.elements[0].params.num]
 
     def compute_dist(self):
@@ -178,7 +191,7 @@ class TriCascade(Cascade):
     def get_output_lanes(self):
         return [self.elements[1]]
 
-    def get_output_lane_ids(self):
+    def get_output_lane_names(self):
         return [self.elements[1].params.num]
 
     def compute_dist(self):
@@ -196,7 +209,9 @@ class TriCascade(Cascade):
         a_1 = min((1. / s_max) * ((b.v / (b.h + (1. / 2.) * a.h)) - L), 1)
         a_2 = min((1. / s_max) * ((b.v / (b.h + (1. / 2.) * c.h)) - L), 1)
 
-        return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h, b.v, b.p + (1 - b.p) * (a.p * (1 - c.p) + c.p * (1 - a.p))), )
+        return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h,
+                   b.v,
+                   b.p + (1 - b.p) * (a.p + c.p - 1.5 * a.p * c.p)),)
 
     def compute_length(self):
         return self.elements[0].compute_length() + \
@@ -227,7 +242,7 @@ class DivCascade(Cascade):
     def get_output_lanes(self):
         return [self.elements[0], self.elements[2]]
 
-    def get_output_lane_ids(self):
+    def get_output_lane_names(self):
         return [self.elements[0].params.num, self.elements[2].params.num]
 
     def compute_dist(self):
@@ -349,7 +364,7 @@ def randsol(input_lanes, target_number, structures=[]):
         else:  # Do DivCascade
             index = int((target_number - 1) * random())
             div_cas = DivCascade(input_lanes[index], input_lanes[
-                                 index + 1], input_lanes[index + 2], None)
+                index + 1], input_lanes[index + 2], None)
             input_lanes = input_lanes[
                 :index] + div_cas.get_lanes() + input_lanes[(index + 3):]
             structures.append(div_cas)
@@ -372,14 +387,14 @@ def randsol(input_lanes, target_number, structures=[]):
         elif rand == 2:  # Do DivCascade
             index = int((len(input_lanes) - 2) * random())
             div_cas = DivCascade(input_lanes[index], input_lanes[
-                                 index + 1], input_lanes[index + 2], None)
+                index + 1], input_lanes[index + 2], None)
             input_lanes = input_lanes[
                 :index] + div_cas.get_lanes() + input_lanes[(index + 3):]
             structures.append(div_cas)
         else:  # Do TriCascade
             index = int((len(input_lanes) - 2) * random())
             tri_cas = TriCascade(input_lanes[index], input_lanes[
-                                 index + 1], input_lanes[index + 2], None)
+                index + 1], input_lanes[index + 2], None)
             input_lanes = input_lanes[
                 :index] + tri_cas.get_lanes() + input_lanes[(index + 3):]
             structures.append(tri_cas)
@@ -478,7 +493,7 @@ def generate_lane_perms(curr_string, target_length):
         return possibilities
 
 
-def find_optimal(lane_ordering, num_trials=1):
+def find_optimal(lane_ordering, num_trials=100):
     max_acceptable = 0.1765 * 10
     min_acceptable = 0.036095
     target_number = 2
@@ -511,7 +526,10 @@ def find_optimal(lane_ordering, num_trials=1):
         for config in possibilities:
             output_h = sum(lane.compute_dist().h for lane in config[0])
             output_p = sum(lane.compute_dist().p for lane in config[0])
-            score = output_h / input_h  # Could be p or h
+            throughput_score = output_h / input_h  # Could be p or h
+            merging_lane_h = sum(struct.get_merging_lane_throughput()
+                                 for struct in config[1])
+            score = g.g1 * merging_lane_h + g.g2 * throughput_score
             name = ""
             for piece in config[1]:
                 name += piece.get_name()
@@ -529,14 +547,21 @@ def find_optimal(lane_ordering, num_trials=1):
             best_ave = averages[config]
             best_config_str = str(configs[config][1])
             best = config
+    with open(join("tmp", str(uuid4())), "w+") as fp:
+        fp.write("{}\n".format(lane_ordering))
+        fp.write("{}\n".format(best))
+        fp.write("{}\n".format(best_ave))
+        fp.write("{}\n".format(best_config_str))
     print(best_ave)
     print(best_config_str)
     print(len(possibilities))
-    print("Finished")
     # print(sum(bests) / len(bests))
 
 
 if __name__ == '__main__':
+    if exists("tmp"):
+        rmtree("tmp")
+    mkdir("tmp")
     lp = [l for l in generate_lane_perms("", 7)
           if l.count('a') > 1 and
           (l.count('b') == 1 or l.count('b') == 2) and
