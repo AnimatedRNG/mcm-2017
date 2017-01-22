@@ -16,9 +16,9 @@ from joblib import Parallel, delayed
 TV = namedtuple('TV', 'h v p')
 LaneParams = namedtuple('LaneParams', 'h v p num')
 CascadeParams = namedtuple('CascadeParams', 'm')
-GlobalParams = namedtuple('GlobalParams', 's_max L g1 g2')
+GlobalParams = namedtuple('GlobalParams', 'L g1 g2 t_human')
 
-g = GlobalParams(140, 7.0, 0, 1)  # Used to be 96, 4.8
+g = GlobalParams(7.0, 0, 1, 3.7)  # Used to be 96, 4.8
 
 
 class TollElement(object):
@@ -36,6 +36,7 @@ class Lane(TollElement):
 
     def __init__(self, params, a=-1):
         self.params = params
+        self.L = g.L + self.params.v * g.t_human
         self.ID = a if a != -1 else uuid4()
 
     def compute_dist(self):
@@ -116,8 +117,8 @@ class LCascade(Cascade):
         a = self.elements[0].compute_dist()
         b = self.elements[1].compute_dist()
 
-        L = g.L
-        s_max = g.s_max
+        L = self.elements[0].L
+        s_max = L * 20
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
@@ -157,8 +158,8 @@ class RCascade(Cascade):
         a = self.elements[1].compute_dist()
         b = self.elements[0].compute_dist()
 
-        L = g.L
-        s_max = g.s_max
+        L = self.elements[1].L
+        s_max = L * 20
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
@@ -200,16 +201,21 @@ class TriCascade(Cascade):
         b = self.elements[1].compute_dist()
         c = self.elements[2].compute_dist()
 
-        alpha = lambda t: min((t.v / t.h - L) / s_max, 1)
+        alpha = lambda t, L, s_max: min((t.v / t.h - L) / s_max, 1)
 
-        L = g.L
-        s_max = g.s_max
+        L_a = self.elements[0].L
+        L_b = self.elements[1].L
+        L_c = self.elements[2].L
+
+        s_max_a = 20 * L_a
+        s_max_b = 20 * L_b
+        s_max_c = 20 * L_c
 
         # Fix speed
-        a_1 = min((1. / s_max) * ((b.v / (b.h + (1. / 2.) * a.h)) - L), 1)
-        a_2 = min((1. / s_max) * ((b.v / (b.h + (1. / 2.) * c.h)) - L), 1)
+        a_1 = min((1. / s_max_b) * ((b.v / (b.h + (1. / 2.) * a.h)) - L_c), 1)
+        a_2 = min((1. / s_max_b) * ((b.v / (b.h + (1. / 2.) * c.h)) - L_a), 1)
 
-        return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h,
+        return (TV(alpha(b, L_b, s_max_b) * b.h + a_1 * c.h + a_2 * a.h,
                    b.v,
                    b.p + (1 - b.p) * (a.p + c.p - 1.5 * a.p * c.p)),)
 
@@ -247,23 +253,31 @@ class DivCascade(Cascade):
 
     def compute_dist(self):
         global g
-        alpha = lambda t: min((t.v / t.h - L) / s_max, 1)
+        alpha = lambda t, L, s_max: min((t.v / t.h - L) / s_max, 1)
 
         a = self.elements[0].compute_dist()
         b = self.elements[1].compute_dist()
         c = self.elements[2].compute_dist()
 
-        L = g.L
-        s_max = g.s_max
+        L_a = self.elements[0].L
+        L_b = self.elements[1].L
+        L_c = self.elements[2].L
 
-        a_1 = (alpha(a) / (alpha(a) + alpha(c)))
+        s_max_a = L_a * 20
+        s_max_b = L_b * 20
+        s_max_c = L_c * 20
+
+        a_1 = (alpha(a, L_a, s_max_a) / (alpha(a, L_b, s_max_b) +
+                                         alpha(c, L_c, s_max_c)))
         a_2 = 1 - a_1
 
         # Fix speed
         return (
-            TV(alpha(a) * a.h + a_1 * alpha(a) * b.h, a.v,
+            TV(a.h + a_1 * alpha(a, L_a, s_max_a) *
+               b.h, a.v,
                a.p + (1 - a.p) * (1 + c.p) * b.p / 2.0),
-            TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, c.v,
+            TV(c.h + a_2 * alpha(c, L_c, s_max_c) *
+               b.h, c.v,
                c.p + (1 - c.p) * (1 + a.p) * b.p / 2.0)
         )
 
@@ -493,11 +507,10 @@ def generate_lane_perms(curr_string, target_length):
         return possibilities
 
 
-def find_optimal(lane_ordering, num_trials=100):
+def find_optimal(lane_ordering, num_trials=1):
     max_acceptable = 0.1765 * 10
     min_acceptable = 0.036095
     target_number = 2
-    car_length = g.L
     bests = []
     configs = {}
 
@@ -527,9 +540,11 @@ def find_optimal(lane_ordering, num_trials=100):
             output_h = sum(lane.compute_dist().h for lane in config[0])
             output_p = sum(lane.compute_dist().p for lane in config[0])
             throughput_score = output_h / input_h  # Could be p or h
+            b_l = len(lane_ordering) - target_number
             merging_lane_h = sum(struct.get_merging_lane_throughput()
                                  for struct in config[1])
-            score = g.g1 * merging_lane_h + g.g2 * throughput_score
+            score = g.g1 * merging_lane_h / (0.059683 * b_l) + \
+                g.g2 * throughput_score
             name = ""
             for piece in config[1]:
                 name += piece.get_name()
