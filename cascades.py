@@ -3,8 +3,11 @@
 from collections import namedtuple
 from random import random
 
+# $1553 per meter per lane
+
 TV = namedtuple('TV', 'h v')
 LaneParams = namedtuple('LaneParams', 'h v')
+CascadeParams = namedtuple('CascadeParams', 'm')
 GlobalParams = namedtuple('GlobalParams', 's_max L')
 
 g = GlobalParams(96, 4.8)
@@ -35,6 +38,9 @@ class Lane(TollElement):
     def compute_input_num(self):
         return 1
 
+    def compute_length(self):
+        return 0
+
     def __repr__(self):
         return "Lane {{\n\tTV: {}}}".format(self.compute_dist())
 
@@ -47,6 +53,10 @@ class Cascade(TollElement):
 
     def get_lanes(self):
         return [Lane(LaneParams(tv.h, tv.v)) for tv in self.compute_dist()]
+
+    def compute_length(self):
+        raise NotImplementedError("Haven't yet implemented this cascade's " +
+                                  "compute_length() function")
 
     def compute_dist(self):
         raise NotImplementedError("Haven't yet implemented this cascade's " +
@@ -74,6 +84,11 @@ class LCascade(Cascade):
         a_b = min(s_b / s_max, 1)
         return (TV((1 - a_b) * b.h + a_b * a.h, b.v),)
 
+    def compute_length(self):
+        return self.elements[0].compute_length() + \
+            self.elements[1].compute_length() + \
+            self.params.m
+
     def compute_input_num(self):
         return 2
 
@@ -100,6 +115,11 @@ class RCascade(Cascade):
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
         return (TV((1 - a_b) * b.h + a_b * a.h, b.v),)
+
+    def compute_length(self):
+        return self.elements[0].compute_length() + \
+            self.elements[1].compute_length() + \
+            self.params.m
 
     def compute_input_num(self):
         return 2
@@ -133,6 +153,12 @@ class TriCascade(Cascade):
         a_2 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * c.h)) - L), 1)
 
         return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h, b.v), )
+
+    def compute_length(self):
+        return self.elements[0].compute_length() + \
+            self.elements[1].compute_length() + \
+            self.elements[2].compute_length() + \
+            self.params.m * 2
 
     def compute_input_num(self):
         return 3
@@ -171,6 +197,12 @@ class DivCascade(Cascade):
             TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, b.v)
         )
 
+    def compute_length(self):
+        return self.elements[0].compute_length() + \
+            self.elements[1].compute_length() + \
+            self.elements[2].compute_length() + \
+            self.params.m
+
     def compute_input_num(self):
         return 3
 
@@ -190,8 +222,10 @@ def generate(input_lanes, target_number, structures=[]):
         return []
     possibilities = []
     for i in range(len(input_lanes) - 1):
-        l_cas = LCascade(input_lanes[i], input_lanes[i + 1], None)
-        r_cas = RCascade(input_lanes[i], input_lanes[i + 1], None)
+        l_cas = LCascade(input_lanes[i], input_lanes[i + 1],
+                         CascadeParams(5))
+        r_cas = RCascade(input_lanes[i], input_lanes[i + 1],
+                         CascadeParams(5))
         possibilities.extend(
             generate(input_lanes[:i] +
                      l_cas.get_lanes() +
@@ -203,10 +237,10 @@ def generate(input_lanes, target_number, structures=[]):
         if (i != len(input_lanes) - 2):
             tri_cas = TriCascade(input_lanes[i],
                                  input_lanes[i + 1],
-                                 input_lanes[i + 2], None)
+                                 input_lanes[i + 2], CascadeParams(5))
             div_cas = DivCascade(input_lanes[i],
                                  input_lanes[i + 1],
-                                 input_lanes[i + 2], None)
+                                 input_lanes[i + 2], CascadeParams(5))
             possibilities.extend(
                 generate(input_lanes[:i] +
                          tri_cas.get_lanes() +
@@ -237,4 +271,5 @@ if __name__ == '__main__':
         if best_score < score:
             best_score = score
             best = config
+    print(best[1][0].compute_length())
     print("{}:\n{}\n\n".format(best[1], best_score))
