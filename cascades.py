@@ -2,15 +2,18 @@
 
 from collections import namedtuple
 from random import random
+import sys
+# sys.path.append('/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages')
+#import numpy as np
 
 # $1553 per meter per lane
 
-TV = namedtuple('TV', 'h v')
-LaneParams = namedtuple('LaneParams', 'h v')
+TV = namedtuple('TV', 'h v p')
+LaneParams = namedtuple('LaneParams', 'h v p')
 CascadeParams = namedtuple('CascadeParams', 'm')
 GlobalParams = namedtuple('GlobalParams', 's_max L')
 
-g = GlobalParams(96, 4.8)
+g = GlobalParams(140, 7.0)  # Used to be 96, 4.8
 
 
 class TollElement(object):
@@ -30,7 +33,7 @@ class Lane(TollElement):
         self.params = params
 
     def compute_dist(self):
-        return TV(self.params.h, self.params.v)
+        return TV(self.params.h, self.params.v, self.params.p)
 
     def compute_output_num(self):
         return 1
@@ -40,6 +43,9 @@ class Lane(TollElement):
 
     def compute_length(self):
         return 0
+
+    def get_name(self):
+        return "L"
 
     def __repr__(self):
         return "Lane {{\n\tTV: {}}}".format(self.compute_dist())
@@ -52,7 +58,7 @@ class Cascade(TollElement):
         self.params = params
 
     def get_lanes(self):
-        return [Lane(LaneParams(tv.h, tv.v)) for tv in self.compute_dist()]
+        return [Lane(LaneParams(tv.h, tv.v, tv.p)) for tv in self.compute_dist()]
 
     def compute_length(self):
         raise NotImplementedError("Haven't yet implemented this cascade's " +
@@ -82,7 +88,7 @@ class LCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV((1 - a_b) * b.h + a_b * a.h, b.v),)
+        return (TV((1 - a_b) * b.h + a_b * a.h, a.v, a.p + b.p - a.p * b.p),)
 
     def compute_length(self):
         return self.elements[0].compute_length() + \
@@ -94,6 +100,9 @@ class LCascade(Cascade):
 
     def compute_output_num(self):
         return 1
+
+    def get_name(self):
+        return "LC[{}]".format("".join([e.get_name() for e in self.elements]))
 
     def __repr__(self):
         return "LCascade {{\n\t{}\n\t{}\n\tTV: {}}}".format(
@@ -114,7 +123,7 @@ class RCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV((1 - a_b) * b.h + a_b * a.h, b.v),)
+        return (TV((1 - a_b) * b.h + a_b * a.h, b.v, a.p + b.p - a.p * b.p),)
 
     def compute_length(self):
         return self.elements[0].compute_length() + \
@@ -126,6 +135,9 @@ class RCascade(Cascade):
 
     def compute_output_num(self):
         return 1
+
+    def get_name(self):
+        return "RC[{}]".format("".join([e.get_name() for e in self.elements]))
 
     def __repr__(self):
         return "RCascade {{\n\t{}\n\t{}\n\tTV: {}}}".format(
@@ -149,10 +161,10 @@ class TriCascade(Cascade):
         s_max = g.s_max
 
         # Fix speed
-        a_1 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * a.h)) - L), 1)
-        a_2 = min((1 / s_max) * ((b.v / (b.h + (1 / 2) * c.h)) - L), 1)
+        a_1 = min((1. / s_max) * ((b.v / (b.h + (1. / 2.) * a.h)) - L), 1)
+        a_2 = min((1. / s_max) * ((b.v / (b.h + (1. / 2.) * c.h)) - L), 1)
 
-        return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h, b.v), )
+        return (TV(alpha(b) * b.h + a_1 * c.h + a_2 * a.h, b.v, b.p + (1 - b.p) * (a.p * (1 - c.p) + c.p * (1 - a.p))), )
 
     def compute_length(self):
         return self.elements[0].compute_length() + \
@@ -165,6 +177,9 @@ class TriCascade(Cascade):
 
     def compute_output_num(self):
         return 1
+
+    def get_name(self):
+        return "TriC[{}]".format("".join([e.get_name() for e in self.elements]))
 
     def __repr__(self):
         return "TriCascade {{\n\t{}\n\t{}\n{}\n\tTV: {}}}".format(
@@ -193,8 +208,10 @@ class DivCascade(Cascade):
 
         # Fix speed
         return (
-            TV(alpha(a) * a.h + a_1 * alpha(a) * b.h, b.v),
-            TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, b.v)
+            TV(alpha(a) * a.h + a_1 * alpha(a) * b.h, a.v,
+               a.p + (1 - a.p) * (1 + c.p) * b.p / 2.0),
+            TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, c.v,
+               c.p + (1 - c.p) * (1 + a.p) * b.p / 2.0)
         )
 
     def compute_length(self):
@@ -208,6 +225,9 @@ class DivCascade(Cascade):
 
     def compute_output_num(self):
         return 2
+
+    def get_name(self):
+        return "DivC[{}]".format("".join([e.get_name() for e in self.elements]))
 
     def __repr__(self):
         return "DivCascade {{\n\t{}\n\t{}\n\t{}\n\tTV: {}}}".format(
@@ -255,21 +275,193 @@ def generate(input_lanes, target_number, structures=[]):
                          structures + [div_cas]))
     return possibilities
 
+
+def randsol(input_lanes, target_number, structures=[]):
+    if len(input_lanes) == target_number:
+        return (input_lanes, structures)
+
+    if len(input_lanes) - target_number == 1:
+        if target_number != 1:
+            rand = int(3 * random())
+        else:
+            rand = int(2 * random())
+
+        if rand == 0:  # Do LCascade
+            index = int(target_number * random())
+            l_cas = LCascade(input_lanes[index], input_lanes[index + 1], None)
+            input_lanes = input_lanes[:index] + \
+                l_cas.get_lanes() + input_lanes[(index + 2):]
+            structures.append(l_cas)
+        elif rand == 1:  # Do RCascade
+            index = int(target_number * random())
+            r_cas = RCascade(input_lanes[index], input_lanes[index + 1], None)
+            input_lanes = input_lanes[:index] + \
+                r_cas.get_lanes() + input_lanes[(index + 2):]
+            structures.append(r_cas)
+        else:  # Do DivCascade
+            index = int((target_number - 1) * random())
+            div_cas = DivCascade(input_lanes[index], input_lanes[
+                                 index + 1], input_lanes[index + 2], None)
+            input_lanes = input_lanes[
+                :index] + div_cas.get_lanes() + input_lanes[(index + 3):]
+            structures.append(div_cas)
+        return (input_lanes, structures)
+
+    else:  # Much room
+        rand = int(4 * random())
+        if rand == 0:  # Do LCascade
+            index = int((len(input_lanes) - 1) * random())
+            l_cas = LCascade(input_lanes[index], input_lanes[index + 1], None)
+            input_lanes = input_lanes[:index] + \
+                l_cas.get_lanes() + input_lanes[(index + 2):]
+            structures.append(l_cas)
+        elif rand == 1:  # Do RCascade
+            index = int((len(input_lanes) - 1) * random())
+            r_cas = RCascade(input_lanes[index], input_lanes[index + 1], None)
+            input_lanes = input_lanes[:index] + \
+                r_cas.get_lanes() + input_lanes[(index + 2):]
+            structures.append(r_cas)
+        elif rand == 2:  # Do DivCascade
+            index = int((len(input_lanes) - 2) * random())
+            div_cas = DivCascade(input_lanes[index], input_lanes[
+                                 index + 1], input_lanes[index + 2], None)
+            input_lanes = input_lanes[
+                :index] + div_cas.get_lanes() + input_lanes[(index + 3):]
+            structures.append(div_cas)
+        else:  # Do TriCascade
+            index = int((len(input_lanes) - 2) * random())
+            tri_cas = TriCascade(input_lanes[index], input_lanes[
+                                 index + 1], input_lanes[index + 2], None)
+            input_lanes = input_lanes[
+                :index] + tri_cas.get_lanes() + input_lanes[(index + 3):]
+            structures.append(tri_cas)
+        return randsol(input_lanes, target_number, structures)
+
+
+def random_ascent(input_lanes, target_number, N=1000000):
+    y = randsol(input_lanes, target_number)
+    input_h = sum(lane.compute_dist().h for lane in input_lanes)
+    input_p = sum(lane.compute_dist().p for lane in input_lanes)
+    output_h = sum(lane.compute_dist().h for lane in y[0])
+    output_p = sum(lane.compute_dist().p for lane in y[0])
+    best_score = output_h / input_h  # Could be p or h
+    best = y
+    for i in range(N):
+        x = randsol(input_lanes, target_number, [])
+        output_h = sum(lane.compute_dist().h for lane in x[0])
+        output_p = sum(lane.compute_dist().p for lane in x[0])
+        score = output_h / input_h
+        if score > best_score:
+            best_score = score
+            best = x
+    return (best, best_score)
+
+
+def num_sols(num_in, num_out):
+    # Assumes num_out > 1
+    if num_in == num_out:
+        return 1
+    elif num_in == num_out + 1:
+        return 3 * num_out - 1
+    else:
+        prev = num_sols(num_in - 1, num_out)
+        return (3 * num_in - 4) * prev + (num_in - 2) * num_sols(num_in - 2, num_out)
+
+
+def format_number(solutions):
+    answer = str(solutions)
+    startIndex = len(answer) % 3
+    if startIndex == 0:
+        startIndex = 3
+    for i in range(startIndex, len(answer) + 4, 4):
+        answer = answer[:i] + ',' + answer[i:]
+    if answer[-1] == ',':
+        answer = answer[:-1]
+    return answer
+
+
+def generate_manual(autonomous=0):
+    min_h = .039
+    max_h = .111
+    std = ((max_h + min_h) / 2.0 - min_h) / 3.0
+    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    h = min_h + random() * (max_h - min_h)
+    v = 15.6
+    p = h * g.L / v
+    return Lane(LaneParams(h, v, p))
+
+
+def generate_exact(autonomous=0):
+    min_h = .021
+    max_h = .139
+    std = ((max_h + min_h) / 2.0 - min_h) / 3.0
+    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    h = min_h + random() * (max_h - min_h)
+    v = 15.6
+    p = h * g.L / v
+    return Lane(LaneParams(h, v, p))
+
+
+def generate_ezpass(autonomous=0):
+    min_h = .2
+    max_h = .5  # Assuming EZ pass is half of all lanes out of lack of data
+    std = ((max_h + min_h) / 2.0 - min_h) / 3.0
+    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    h = min_h + random() * (max_h - min_h)
+    v = 20.1  # According to speed limit
+    p = h * g.L / v
+    return Lane(LaneParams(h, v, p))
+
 if __name__ == '__main__':
     max_acceptable = 0.1765 * 10
     min_acceptable = 0.036095
+    target_number = 3
+    car_length = g.L
+    num_manuals = 2
+    num_exact = 1
+    num_ez_pass = 3
+    bests = []
+    for j in range(1):
+        a = []
+        for i in range(num_manuals):
+            a.append(generate_manual())
+        for i in range(num_exact):
+            a.append(generate_manual())
+        for i in range(num_ez_pass):
+            a.append(generate_manual())
 
-    a = [Lane(LaneParams(
-        random() * (max_acceptable - min_acceptable) + min_acceptable, 29))
-        for a in range(9)]
-    best_score = 0
-    best = None
-    input_h = sum(lane.compute_dist().h for lane in a)
-    for config in generate(a, 5):
-        output_h = sum(lane.compute_dist().h for lane in config[0])
-        score = output_h / input_h
-        if best_score < score:
-            best_score = score
-            best = config
-    print(best[1][0].compute_length())
-    print("{}:\n{}\n\n".format(best[1], best_score))
+        #best, best_score = random_ascent(a, target_number)
+        #print("{}:\n{}\n\n".format(best[1][0:10], best_score))
+        #solutions = num_sols(20,5)
+        # print(format_number(answer))
+        # sys.exit()
+
+        top_n = 3  # Should be small
+        best_scores = [0] * top_n
+        best = [None] * top_n
+        input_h = sum(lane.compute_dist().h for lane in a)
+        input_p = sum(lane.compute_dist().p for lane in a)
+        possibilities = generate(a, target_number)
+
+        # print("Halfway")
+        for config in possibilities:
+            output_h = sum(lane.compute_dist().h for lane in config[0])
+            output_p = sum(lane.compute_dist().p for lane in config[0])
+            score = output_h / input_h  # Could be p or h
+            if best[-1] == None or best_scores[-1] < score:
+                index = top_n - 1
+                while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
+                    index -= 1
+                if (index == 0) and (best_scores[0] < score):
+                    index = -1
+                index += 1
+                best_scores = best_scores[:index] + \
+                    [score] + best_scores[index:-1]
+                best = best[:index] + [config] + best[index:-1]
+        bests.append(best_scores[0])
+
+    for i in range(top_n):
+        print("#" + str(i + 1) +
+              ": {}:\n{}\n\n".format(best[i][1], best_scores[i]))
+    print(len(possibilities))
+    print(sum(bests) / len(bests))
