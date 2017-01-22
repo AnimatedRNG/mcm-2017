@@ -122,7 +122,9 @@ class LCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV((1 - a_b) * b.h + a_b * a.h, a.v, a.p + b.p - a.p * b.p),)
+        return (TV(b.h + a_b * a.h,
+                   a.v,
+                   a.p + b.p - a.p * b.p),)
 
     def compute_length(self):
         return self.elements[0].compute_length() + \
@@ -163,7 +165,9 @@ class RCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV((1 - a_b) * b.h + a_b * a.h, b.v, a.p + b.p - a.p * b.p),)
+        return (TV(b.h + a_b * a.h,
+                   b.v,
+                   a.p + b.p - a.p * b.p),)
 
     def compute_length(self):
         return self.elements[0].compute_length() + \
@@ -212,10 +216,14 @@ class TriCascade(Cascade):
         s_max_c = 20 * L_c
 
         # Fix speed
-        a_1 = min((1. / s_max_b) * ((b.v / (b.h + (1. / 2.) * a.h)) - L_c), 1)
-        a_2 = min((1. / s_max_b) * ((b.v / (b.h + (1. / 2.) * c.h)) - L_a), 1)
+        a_1 = min((1. / s_max_b) *
+                  (((b.v + a.v / 2.) / (b.h + a.h / 2.)) -
+                   (L_b + L_a / 2.)), 1)
+        a_2 = min((1. / s_max_b) *
+                  (((b.v + c.v / 2.) / (b.h + c.h / 2.)) -
+                   (L_b + L_c / 2.)), 1)
 
-        return (TV(alpha(b, L_b, s_max_b) * b.h + a_1 * c.h + a_2 * a.h,
+        return (TV(b.h + a_1 * c.h + a_2 * a.h,
                    b.v,
                    b.p + (1 - b.p) * (a.p + c.p - 1.5 * a.p * c.p)),)
 
