@@ -2,7 +2,9 @@
 
 from collections import namedtuple
 from random import random
+from uuid import uuid4
 import sys
+from joblib import Parallel, delayed
 # sys.path.append('/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages')
 # import numpy as np
 
@@ -29,8 +31,9 @@ class TollElement(object):
 
 class Lane(TollElement):
 
-    def __init__(self, params):
+    def __init__(self, params, a=-1):
         self.params = params
+        self.ID = a if a != -1 else uuid4()
 
     def compute_dist(self):
         return TV(self.params.h, self.params.v, self.params.p)
@@ -47,8 +50,11 @@ class Lane(TollElement):
     def get_name(self):
         return str(self.params.num)
 
+    def hash(self):
+        return hash(this.get_name())
+
     def __repr__(self):
-        return "Lane {{\n\tTV: {}}}".format(self.compute_dist())
+        return "Lane {{\n\tTV: {}\n\tID: {} }}".format(self.compute_dist(), self.ID)
 
 
 class Cascade(TollElement):
@@ -59,8 +65,13 @@ class Cascade(TollElement):
         self.elements = elements
         self.params = params
 
+    def hash(self):
+        return hash(this.get_name())
+
     def get_lanes(self):
-        return [Lane(LaneParams(tv.h, tv.v, tv.p, self.get_output_lane_ids()[i]))
+        return [Lane(LaneParams(tv.h, tv.v, tv.p,
+                                self.get_output_lane_ids()[i]),
+                     self.get_output_lanes()[i].ID)
                 for i, tv in enumerate(self.compute_dist())]
 
     def compute_length(self):
@@ -81,6 +92,9 @@ class LCascade(Cascade):
 
     def __init__(self, left, right, params):
         super(LCascade, self).__init__((left, right), params)
+
+    def get_output_lanes(self):
+        return [self.elements[1]]
 
     def get_output_lane_ids(self):
         return [self.elements[1].params.num]
@@ -120,6 +134,9 @@ class RCascade(Cascade):
     def __init__(self, left, right, params):
         super(RCascade, self).__init__((left, right), params)
 
+    def get_output_lanes(self):
+        return [self.elements[0]]
+
     def get_output_lane_ids(self):
         return [self.elements[0].params.num]
 
@@ -157,6 +174,9 @@ class TriCascade(Cascade):
 
     def __init__(self, left, middle, right, params):
         super(TriCascade, self).__init__((left, middle, right), params)
+
+    def get_output_lanes(self):
+        return [self.elements[1]]
 
     def get_output_lane_ids(self):
         return [self.elements[1].params.num]
@@ -203,6 +223,9 @@ class DivCascade(Cascade):
 
     def __init__(self, left, middle, right, params):
         super(DivCascade, self).__init__((left, middle, right), params)
+
+    def get_output_lanes(self):
+        return [self.elements[0], self.elements[2]]
 
     def get_output_lane_ids(self):
         return [self.elements[0].params.num, self.elements[2].params.num]
@@ -252,7 +275,17 @@ class DivCascade(Cascade):
 
 def generate(input_lanes, target_number, structures=[]):
     if len(input_lanes) == target_number:
-        return [(input_lanes, structures)]
+        with_singletons = structures[:]
+        output_lanes_ids = set()
+        for struct in structures:
+            output_lanes = struct.get_output_lanes()
+            for output_lane in output_lanes:
+                output_lanes_ids.add(output_lane.ID)
+        for lane in input_lanes:
+            lane_id = lane.ID
+            if not lane_id in output_lanes_ids:
+                with_singletons.append(lane)
+        return [(input_lanes, with_singletons)]
     if len(input_lanes) < target_number:
         return []
     possibilities = []
@@ -399,7 +432,8 @@ def generate_manual(autonomous, index):
     min_h = .039
     max_h = .111
     std = ((max_h + min_h) / 2.0 - min_h) / 3.0
-    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h),
+    # max_h)
     h = min_h + random() * (max_h - min_h)
     v = 15.6
     p = h * g.L / v
@@ -410,7 +444,8 @@ def generate_exact(autonomous, index):
     min_h = .021
     max_h = .139
     std = ((max_h + min_h) / 2.0 - min_h) / 3.0
-    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h),
+    # max_h)
     h = min_h + random() * (max_h - min_h)
     v = 15.6
     p = h * g.L / v
@@ -421,44 +456,50 @@ def generate_ezpass(autonomous, index):
     min_h = .2
     max_h = .5  # Assuming EZ pass is half of all lanes out of lack of data
     std = ((max_h + min_h) / 2.0 - min_h) / 3.0
-    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h),
+    # max_h)
     h = min_h + random() * (max_h - min_h)
     v = 20.1  # According to speed limit
     p = h * g.L / v
     return Lane(LaneParams(h, v, p, index))
 
-if __name__ == '__main__':
+
+def generate_lane_perms(curr_string, target_length):
+    if len(curr_string) == target_length:
+        return [curr_string]
+    else:
+        possibilities = []
+        possibilities.extend(
+            generate_lane_perms(curr_string + 'a', target_length))
+        possibilities.extend(
+            generate_lane_perms(curr_string + 'b', target_length))
+        possibilities.extend(
+            generate_lane_perms(curr_string + 'c', target_length))
+        return possibilities
+
+
+def find_optimal(lane_ordering, num_trials=1):
     max_acceptable = 0.1765 * 10
     min_acceptable = 0.036095
-    target_number = 3
+    target_number = 2
     car_length = g.L
-    num_manuals = 2
-    num_exact = 1
-    num_ez_pass = 4
     bests = []
     configs = {}
 
-    for j in range(50):
+    for j in range(num_trials):
         a = []
         index = 0
-        for i in range(num_manuals):
-            l = generate_manual(0, index)
+        for i in lane_ordering:
+            if i == 'a':
+                l = generate_manual(0, index)
+            elif i == 'b':
+                l = generate_exact(0, index)
+            elif i == 'c':
+                l = generate_ezpass(0, index)
+            else:
+                assert false
             a.append(l)
             index += 1
-        for i in range(num_exact):
-            l = generate_exact(0, index)
-            a.append(l)
-            index += 1
-        for i in range(num_ez_pass):
-            l = generate_ezpass(0, index)
-            a.append(l)
-            index += 1
-
-        # best, best_score = random_ascent(a, target_number)
-        # print("{}:\n{}\n\n".format(best[1][0:10], best_score))
-        # solutions = num_sols(20,5)
-        # print(format_number(answer))
-        # sys.exit()
 
         top_n = 3  # Should be small
         best_scores = [0] * top_n
@@ -467,7 +508,6 @@ if __name__ == '__main__':
         input_p = sum(lane.compute_dist().p for lane in a)
         possibilities = generate(a, target_number)
 
-        # print("Halfway")
         for config in possibilities:
             output_h = sum(lane.compute_dist().h for lane in config[0])
             output_p = sum(lane.compute_dist().p for lane in config[0])
@@ -476,32 +516,29 @@ if __name__ == '__main__':
             for piece in config[1]:
                 name += piece.get_name()
             if j == 0:
-                configs[name] = [score]
+                configs[name] = [[score], str(config)]
             else:
-                configs[name].append(score)
-# if best[-1] == None or best_scores[-1] < score:
-# index = top_n - 1
-# while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
-# index -= 1
-# if (index == 0) and (best_scores[0] < score):
-# index = -1
-# index += 1
-# best_scores = best_scores[:index] +
-# [score] + best_scores[index:-1]
-# best = best[:index] + [config] + best[index:-1]
-# bests.append(best_scores[0])
-##
-# for i in range(top_n):
-# print("#" + str(i + 1) +
-# ": {}:\n{}\n\n".format(best[i][1], best_scores[i]))
+                configs[name][0].append(score)
 
     averages = {}
     best_ave = 0
+    best_config_str = None
     for config in configs:
-        averages[config] = sum(configs[config]) / len(configs[config])
+        averages[config] = sum(configs[config][0]) / len(configs[config][0])
         if averages[config] > best_ave:
             best_ave = averages[config]
+            best_config_str = str(configs[config][1])
             best = config
-    print(best, best_ave)
+    print(best_ave)
+    print(best_config_str)
     print(len(possibilities))
+    print("Finished")
     # print(sum(bests) / len(bests))
+
+
+if __name__ == '__main__':
+    lp = [l for l in generate_lane_perms("", 7)
+          if l.count('a') > 1 and
+          (l.count('b') == 1 or l.count('b') == 2) and
+          l.count('c') > 1]
+    Parallel(n_jobs=8)(delayed(find_optimal)(l) for l in lp)
