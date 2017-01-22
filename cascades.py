@@ -4,7 +4,7 @@ from collections import namedtuple
 from random import random
 from uuid import uuid4
 from shutil import rmtree
-from os import mkdir
+from os import mkdir, listdir
 from os.path import exists, join
 import sys
 from joblib import Parallel, delayed
@@ -565,5 +565,31 @@ if __name__ == '__main__':
     lp = [l for l in generate_lane_perms("", 7)
           if l.count('a') > 1 and
           (l.count('b') == 1 or l.count('b') == 2) and
-          l.count('c') > 1]
-    Parallel(n_jobs=8)(delayed(find_optimal)(l) for l in lp)
+          l.count('c') > 0]
+    Parallel(n_jobs=8)(delayed(find_optimal)(l) for l in lp[0:7])
+
+    all_configs = {}
+    for log in listdir('tmp'):
+        exact_path = join('tmp', log)
+        with open(exact_path, "r") as fp:
+            ordering = fp.readline().rstrip()
+            name = fp.readline().rstrip()
+            average = float(fp.readline().rstrip())
+            cf = "".join(a for a in fp.readlines())
+            if name in all_configs:
+                print("Updating")
+                all_configs[name][0] += average
+                all_configs[name][1] += 1
+            else:
+                all_configs[name] = [average, 0, cf]
+
+    best_average = -1
+    best_value = None
+    for name, average_cf in all_configs.items():
+        average = average_cf[0] / average_cf[1] \
+            if average_cf[1] != 0 else average_cf[0]
+        if average > best_average:
+            best_average = average
+            best_value = average_cf[2]
+    print("Best average: {}".format(best_average))
+    print("Best value:\n{}".format(best_value))
