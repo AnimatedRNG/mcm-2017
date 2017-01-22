@@ -3,6 +3,8 @@
 from collections import namedtuple
 from random import random
 import sys
+#sys.path.append('/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages')
+#import numpy as np
 
 TV = namedtuple('TV', 'h v p')
 LaneParams = namedtuple('LaneParams', 'h v p')
@@ -73,7 +75,7 @@ class LCascade(Cascade):
 
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
-        return (TV((1 - a_b) * b.h + a_b * a.h, b.v, a.p + b.p - a.p * b.p),)
+        return (TV((1 - a_b) * b.h + a_b * a.h, a.v, a.p + b.p - a.p * b.p),)
 
     def compute_input_num(self):
         return 2
@@ -168,8 +170,8 @@ class DivCascade(Cascade):
 
         # Fix speed
         return (
-            TV(alpha(a) * a.h + a_1 * alpha(a) * b.h, b.v, a.p + (1 - a.p) * (1 + c.p) * b.p/2.0),
-            TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, b.v, c.p + (1 - c.p) * (1 + a.p) * b.p/2.0)
+            TV(alpha(a) * a.h + a_1 * alpha(a) * b.h, a.v, a.p + (1 - a.p) * (1 + c.p) * b.p/2.0),
+            TV(alpha(c) * c.h + a_2 * alpha(c) * b.h, c.v, c.p + (1 - c.p) * (1 + a.p) * b.p/2.0)
         )
 
     def compute_input_num(self):
@@ -312,45 +314,83 @@ def format_number(solutions):
         answer = answer[:-1]
     return answer
 
+def generate_manual(autonomous = 0):
+    min_h = .039
+    max_h = .111
+    std = ((max_h + min_h) / 2.0 - min_h) / 3.0
+    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    h = min_h + random() * (max_h - min_h)
+    v = 15.6
+    p = h * g.L / v
+    return Lane(LaneParams(h, v, p)) 
+
+def generate_exact(autonomous = 0):
+    min_h = .021
+    max_h = .139
+    std = ((max_h + min_h) / 2.0 - min_h) / 3.0
+    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    h = min_h + random() * (max_h - min_h)
+    v = 15.6
+    p = h * g.L / v
+    return Lane(LaneParams(h, v, p))
+
+def generate_ezpass(autonomous = 0):
+    min_h = .2
+    max_h = .5 # Assuming EZ pass is half of all lanes out of lack of data
+    std = ((max_h + min_h) / 2.0 - min_h) / 3.0
+    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    h = min_h + random() * (max_h - min_h)
+    v = 20.1 # According to speed limit
+    p = h * g.L / v
+    return Lane(LaneParams(h, v, p))
+
 if __name__ == '__main__':
     max_acceptable = 0.1765 * 10
     min_acceptable = 0.036095
-    a = []
-    target_number = 5
+    target_number = 3
     car_length = g.L
-    for l in range(9):
-        h = random() * (max_acceptable - min_acceptable) + min_acceptable
-        v = 14.5
-        p = h * car_length / v
-        a.append(Lane(LaneParams(h, v, p)))
+    num_manuals = 2
+    num_exact = 1
+    num_ez_pass = 3
+    bests = []
+    for j in range(1):
+        a = []
+        for i in range(num_manuals):
+            a.append(generate_manual())
+        for i in range(num_exact):
+            a.append(generate_manual())
+        for i in range(num_ez_pass):
+            a.append(generate_manual())
 
-    #best, best_score = random_ascent(a, target_number)
-    #print("{}:\n{}\n\n".format(best[1][0:10], best_score))
-    #solutions = num_sols(20,5)
-    #print(format_number(answer))
-    #sys.exit()
+        #best, best_score = random_ascent(a, target_number)
+        #print("{}:\n{}\n\n".format(best[1][0:10], best_score))
+        #solutions = num_sols(20,5)
+        #print(format_number(answer))
+        #sys.exit()
 
-    top_n = 3 # Should be small
-    best_scores = [0] * top_n
-    best = [None] * top_n
-    input_h = sum(lane.compute_dist().h for lane in a)
-    input_p = sum(lane.compute_dist().p for lane in a)
-    possibilities = generate(a, target_number)
-    
-    print("Halfway")
-    for config in possibilities:
-        output_h = sum(lane.compute_dist().h for lane in config[0])
-        output_p = sum(lane.compute_dist().p for lane in config[0])
-        score = output_h / input_h #Could be p or h
-        if best[-1] == None or best_scores[-1] < score:
-            index = top_n - 1
-            while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
-                index -= 1
-            if (index == 0) and (best_scores[0] < score):
-                index = -1
-            index += 1
-            best_scores = best_scores[:index] + [score] + best_scores[index:-1]
-            best = best[:index] + [config] + best[index:-1]
+        top_n = 3 # Should be small
+        best_scores = [0] * top_n
+        best = [None] * top_n
+        input_h = sum(lane.compute_dist().h for lane in a)
+        input_p = sum(lane.compute_dist().p for lane in a)
+        possibilities = generate(a, target_number)
+        
+        #print("Halfway")
+        for config in possibilities:
+            output_h = sum(lane.compute_dist().h for lane in config[0])
+            output_p = sum(lane.compute_dist().p for lane in config[0])
+            score = output_h / input_h #Could be p or h
+            if best[-1] == None or best_scores[-1] < score:
+                index = top_n - 1
+                while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
+                    index -= 1
+                if (index == 0) and (best_scores[0] < score):
+                    index = -1
+                index += 1
+                best_scores = best_scores[:index] + [score] + best_scores[index:-1]
+                best = best[:index] + [config] + best[index:-1]
+        bests.append(best_scores[0])
     for i in range(top_n):
         print("#" + str(i + 1) + ": {}:\n{}\n\n".format(best[i][1], best_scores[i]))
     print(len(possibilities))
+    print(sum(bests) / len(bests))
