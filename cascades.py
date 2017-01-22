@@ -275,7 +275,7 @@ class DivCascade(Cascade):
         s_max_b = L_b * 20
         s_max_c = L_c * 20
 
-        a_1 = (alpha(a, L_a, s_max_a) / (alpha(a, L_b, s_max_b) +
+        a_1 = (alpha(a, L_a, s_max_a) / (alpha(a, L_a, s_max_a) +
                                          alpha(c, L_c, s_max_c)))
         a_2 = 1 - a_1
 
