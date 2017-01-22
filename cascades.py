@@ -516,8 +516,6 @@ def generate_lane_perms(curr_string, target_length):
 
 
 def find_optimal(lane_ordering, num_trials=1):
-    max_acceptable = 0.1765 * 10
-    min_acceptable = 0.036095
     target_number = 2
     bests = []
     configs = {}
@@ -541,13 +539,16 @@ def find_optimal(lane_ordering, num_trials=1):
         best_scores = [0] * top_n
         best = [None] * top_n
         input_h = sum(lane.compute_dist().h for lane in a)
+        print(input_h)
         input_p = sum(lane.compute_dist().p for lane in a)
         possibilities = generate(a, target_number)
 
         for config in possibilities:
             output_h = sum(lane.compute_dist().h for lane in config[0])
             output_p = sum(lane.compute_dist().p for lane in config[0])
+            print(output_h)
             throughput_score = output_h / input_h  # Could be p or h
+            assert(throughput_score < 1)
             b_l = len(lane_ordering) - target_number
             merging_lane_h = sum(struct.get_merging_lane_throughput()
                                  for struct in config[1])
