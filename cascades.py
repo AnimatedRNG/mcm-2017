@@ -4,12 +4,12 @@ from collections import namedtuple
 from random import random
 import sys
 # sys.path.append('/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages')
-#import numpy as np
+# import numpy as np
 
 # $1553 per meter per lane
 
 TV = namedtuple('TV', 'h v p')
-LaneParams = namedtuple('LaneParams', 'h v p')
+LaneParams = namedtuple('LaneParams', 'h v p num')
 CascadeParams = namedtuple('CascadeParams', 'm')
 GlobalParams = namedtuple('GlobalParams', 's_max L')
 
@@ -31,10 +31,6 @@ class Lane(TollElement):
 
     def __init__(self, params):
         self.params = params
-        self.num = "L"
-
-    def name(self, num):
-        self.num = str(num)
 
     def compute_dist(self):
         return TV(self.params.h, self.params.v, self.params.p)
@@ -49,7 +45,7 @@ class Lane(TollElement):
         return 0
 
     def get_name(self):
-        return self.num
+        return str(self.params.num)
 
     def __repr__(self):
         return "Lane {{\n\tTV: {}}}".format(self.compute_dist())
@@ -58,11 +54,14 @@ class Lane(TollElement):
 class Cascade(TollElement):
 
     def __init__(self, elements, params):
+        for element in elements:
+            assert(not isinstance(element, Cascade))
         self.elements = elements
         self.params = params
 
     def get_lanes(self):
-        return [Lane(LaneParams(tv.h, tv.v, tv.p)) for tv in self.compute_dist()]
+        return [Lane(LaneParams(tv.h, tv.v, tv.p, self.get_output_lane_ids()[i]))
+                for i, tv in enumerate(self.compute_dist())]
 
     def compute_length(self):
         raise NotImplementedError("Haven't yet implemented this cascade's " +
@@ -82,6 +81,9 @@ class LCascade(Cascade):
 
     def __init__(self, left, right, params):
         super(LCascade, self).__init__((left, right), params)
+
+    def get_output_lane_ids(self):
+        return [self.elements[1].params.num]
 
     def compute_dist(self):
         a = self.elements[0].compute_dist()
@@ -118,6 +120,9 @@ class RCascade(Cascade):
     def __init__(self, left, right, params):
         super(RCascade, self).__init__((left, right), params)
 
+    def get_output_lane_ids(self):
+        return [self.elements[0].params.num]
+
     def compute_dist(self):
         a = self.elements[1].compute_dist()
         b = self.elements[0].compute_dist()
@@ -152,6 +157,9 @@ class TriCascade(Cascade):
 
     def __init__(self, left, middle, right, params):
         super(TriCascade, self).__init__((left, middle, right), params)
+
+    def get_output_lane_ids(self):
+        return [self.elements[1].params.num]
 
     def compute_dist(self):
         global g
@@ -195,6 +203,9 @@ class DivCascade(Cascade):
 
     def __init__(self, left, middle, right, params):
         super(DivCascade, self).__init__((left, middle, right), params)
+
+    def get_output_lane_ids(self):
+        return [self.elements[0].params.num, self.elements[2].params.num]
 
     def compute_dist(self):
         global g
@@ -384,37 +395,37 @@ def format_number(solutions):
     return answer
 
 
-def generate_manual(autonomous=0):
+def generate_manual(autonomous, index):
     min_h = .039
     max_h = .111
     std = ((max_h + min_h) / 2.0 - min_h) / 3.0
-    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
     h = min_h + random() * (max_h - min_h)
     v = 15.6
     p = h * g.L / v
-    return Lane(LaneParams(h, v, p))
+    return Lane(LaneParams(h, v, p, index))
 
 
-def generate_exact(autonomous=0):
+def generate_exact(autonomous, index):
     min_h = .021
     max_h = .139
     std = ((max_h + min_h) / 2.0 - min_h) / 3.0
-    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
     h = min_h + random() * (max_h - min_h)
     v = 15.6
     p = h * g.L / v
-    return Lane(LaneParams(h, v, p))
+    return Lane(LaneParams(h, v, p, index))
 
 
-def generate_ezpass(autonomous=0):
+def generate_ezpass(autonomous, index):
     min_h = .2
     max_h = .5  # Assuming EZ pass is half of all lanes out of lack of data
     std = ((max_h + min_h) / 2.0 - min_h) / 3.0
-    #h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
+    # h = min(max((std * np.random.normal() + (min_h + max_h)/2.0), min_h), max_h)
     h = min_h + random() * (max_h - min_h)
     v = 20.1  # According to speed limit
     p = h * g.L / v
-    return Lane(LaneParams(h, v, p))
+    return Lane(LaneParams(h, v, p, index))
 
 if __name__ == '__main__':
     max_acceptable = 0.1765 * 10
@@ -426,29 +437,26 @@ if __name__ == '__main__':
     num_ez_pass = 4
     bests = []
     configs = {}
-    
+
     for j in range(50):
         a = []
         index = 0
         for i in range(num_manuals):
-            l = generate_manual()
-            l.name(index)
+            l = generate_manual(0, index)
             a.append(l)
             index += 1
         for i in range(num_exact):
-            l = generate_exact()
-            l.name(index)
+            l = generate_exact(0, index)
             a.append(l)
             index += 1
         for i in range(num_ez_pass):
-            l = generate_ezpass()
-            l.name(index)
+            l = generate_ezpass(0, index)
             a.append(l)
             index += 1
 
-        #best, best_score = random_ascent(a, target_number)
-        #print("{}:\n{}\n\n".format(best[1][0:10], best_score))
-        #solutions = num_sols(20,5)
+        # best, best_score = random_ascent(a, target_number)
+        # print("{}:\n{}\n\n".format(best[1][0:10], best_score))
+        # solutions = num_sols(20,5)
         # print(format_number(answer))
         # sys.exit()
 
@@ -471,21 +479,21 @@ if __name__ == '__main__':
                 configs[name] = [score]
             else:
                 configs[name].append(score)
-##            if best[-1] == None or best_scores[-1] < score:
-##                index = top_n - 1
-##                while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
-##                    index -= 1
-##                if (index == 0) and (best_scores[0] < score):
-##                    index = -1
-##                index += 1
-##                best_scores = best_scores[:index] + 
-##                    [score] + best_scores[index:-1]
-##                best = best[:index] + [config] + best[index:-1]
-##        bests.append(best_scores[0])
+# if best[-1] == None or best_scores[-1] < score:
+# index = top_n - 1
+# while ((index > 0) and ((best[index] == None) or (best_scores[index] < score))):
+# index -= 1
+# if (index == 0) and (best_scores[0] < score):
+# index = -1
+# index += 1
+# best_scores = best_scores[:index] +
+# [score] + best_scores[index:-1]
+# best = best[:index] + [config] + best[index:-1]
+# bests.append(best_scores[0])
 ##
-##    for i in range(top_n):
-##        print("#" + str(i + 1) +
-##              ": {}:\n{}\n\n".format(best[i][1], best_scores[i]))
+# for i in range(top_n):
+# print("#" + str(i + 1) +
+# ": {}:\n{}\n\n".format(best[i][1], best_scores[i]))
 
     averages = {}
     best_ave = 0
@@ -496,4 +504,4 @@ if __name__ == '__main__':
             best = config
     print(best, best_ave)
     print(len(possibilities))
-    #print(sum(bests) / len(bests))
+    # print(sum(bests) / len(bests))
