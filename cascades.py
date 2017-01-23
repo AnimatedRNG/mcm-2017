@@ -549,7 +549,7 @@ def find_optimal(lane_ordering, num_trials=1):
             output_h = sum(lane.compute_dist().h for lane in config[0])
             output_p = sum(lane.compute_dist().p for lane in config[0])
             throughput_score = output_h / input_h  # Could be p or h
-            assert(throughput_score < 1)
+            assert(throughput_score < 1 + 1e6)
             if throughput_score > 1 + 1e6:
                 print("Throughput {} is greater than 1!"
                       .format(throughput_score))
