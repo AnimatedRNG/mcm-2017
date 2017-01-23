@@ -635,6 +635,9 @@ if __name__ == '__main__':
     if exists("tmp"):
         rmtree("tmp")
     mkdir("tmp")
+    if exists("tmpps"):
+        rmtree("tmpps")
+    mkdir('tmpps')
     lp = [l for l in generate_lane_perms("", 6)
           if l.count('a') > 0 and
           (l.count('b') == 1 or l.count('b') == 2) and
@@ -656,9 +659,6 @@ if __name__ == '__main__':
             else:
                 all_configs[name] = [average, 1, cf]
     all_p_configs = {}
-    if exists("tmpps"):
-        rmtree("tmpps")
-    mkdir('tmpps')
     for log in listdir('tmpps'):
         exact_path = join('tmpps', log)
         with open(exact_path, "r") as fp:
