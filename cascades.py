@@ -582,10 +582,9 @@ def find_optimal(lane_ordering, num_trials=100):
             b_l = len(lane_ordering) - target_number
             merging_lane_h = sum(struct.get_merging_lane_throughput()
                                  for struct in config[1])
-            merging_lane_p = sum(struct.get_merging_lane_probability()
-                                 for struct in config[1])
-            score = g.g1 * merging_lane_h / (0.059683 * b_l) + \
-                g.g2 * throughput_score
+            safety_score = merging_lane_h / input_h
+            assert(safety_score <= 1.0)
+            score = g.g1 * safety_score + g.g2 * throughput_score
             name = ""
             for piece in config[1]:
                 name += piece.get_name()
