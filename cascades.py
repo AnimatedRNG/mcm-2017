@@ -45,6 +45,9 @@ class Lane(TollElement):
     def get_merging_lane_throughput(self):
         return 0
 
+    def get_merging_lane_probability(self):
+        return 0
+
     def compute_output_num(self):
         return 1
 
@@ -81,6 +84,13 @@ class Cascade(TollElement):
         merged_lanes = [
             lane for lane in all_lanes if lane.params.num not in output_lanes_ids]
         return sum(m.params.h for m in merged_lanes)
+
+    def get_merging_lane_probability(self):
+        output_lanes_ids = [a.params.num for a in self.get_output_lanes()]
+        all_lanes = self.elements
+        merged_lanes = [
+            lane for lane in all_lanes if lane.params.num not in output_lanes_ids]
+        return sum(m.params.p for m in merged_lanes)
 
     def get_lanes(self):
         input_h = sum(elem.params.h for elem in self.elements)
@@ -539,8 +549,10 @@ def find_optimal(lane_ordering, num_trials=1):
             index += 1
 
         top_n = 3  # Should be small
-        best_scores = [0] * top_n
-        best = [None] * top_n
+        best_h_scores = [0] * top_n
+        best_p_scores = [0] * top_n
+        best_hs = [None] * top_n
+        best_ps = [None] * top_n
         input_h = sum(lane.compute_dist().h for lane in a)
         input_p = sum(lane.compute_dist().p for lane in a)
         possibilities = generate(a, target_number)
@@ -549,10 +561,19 @@ def find_optimal(lane_ordering, num_trials=1):
             output_h = sum(lane.compute_dist().h for lane in config[0])
             output_p = sum(lane.compute_dist().p for lane in config[0])
             throughput_score = output_h / input_h  # Could be p or h
+            probability_score = output_p / input_p
             assert(throughput_score < 1 + 1e6)
+            assert(probability_score < 1 + 1e6)
             if throughput_score > 1 + 1e6:
                 print("Throughput {} is greater than 1!"
                       .format(throughput_score))
+                print("Input lanes: \n{}".format(a))
+                print("Output lanes: \n{}".format(config[0]))
+                print("Name: {}\n".format(
+                    "".join(piece.get_name() for piece in config[1])))
+            if probability_score > 1 + 1e6:
+                print("Probability {} is greater than 1!"
+                      .format(probability_score))
                 print("Input lanes: \n{}".format(a))
                 print("Output lanes: \n{}".format(config[0]))
                 print("Name: {}\n".format(
@@ -561,32 +582,51 @@ def find_optimal(lane_ordering, num_trials=1):
             b_l = len(lane_ordering) - target_number
             merging_lane_h = sum(struct.get_merging_lane_throughput()
                                  for struct in config[1])
+            merging_lane_p = sum(struct.get_merging_lane_probability()
+                                 for struct in config[1])
             score = g.g1 * merging_lane_h / (0.059683 * b_l) + \
                 g.g2 * throughput_score
             name = ""
             for piece in config[1]:
                 name += piece.get_name()
             if j == 0:
-                configs[name] = [[score], str(config)]
+                configs[name] = [[score], [probability_score], str(config)]
             else:
                 configs[name][0].append(score)
+                configs[name][1].append(probability_score)
 
     averages = {}
     best_ave = 0
+    p_averages = {}
+    best_p_ave = 0
     best_config_str = None
+    best_p_config_str = None
     for config in configs:
         averages[config] = sum(configs[config][0]) / len(configs[config][0])
+        p_averages[config] = sum(configs[config][1]) / len(configs[config][1])
         if averages[config] > best_ave:
             best_ave = averages[config]
-            best_config_str = str(configs[config][1])
+            best_config_str = str(configs[config][2])
             best = config
+        if p_averages[config] > best_p_ave:
+            best_ave = averages[config]
+            best_p_config_str = str(configs[config][2])
+            best_p = config
     with open(join("tmp", str(uuid4())), "w+") as fp:
         fp.write("{}\n".format(lane_ordering))
         fp.write("{}\n".format(best))
         fp.write("{}\n".format(best_ave))
         fp.write("{}\n".format(best_config_str))
+    with open(join("tmpps", str(uuid4())), "w+") as fp:
+        fp.write("{}\n".format(lane_ordering))
+        fp.write("{}\n".format(best_p))
+        fp.write("{}\n".format(best_p_ave))
+        fp.write("{}\n".format(best_p_config_str))
     print(best_ave)
     print(best_config_str)
+    print()
+    print(best_p_ave)
+    print(best_p_config_str)
     print(len(possibilities))
     # print(sum(bests) / len(bests))
 
@@ -615,14 +655,39 @@ if __name__ == '__main__':
                 all_configs[name][1] += 1
             else:
                 all_configs[name] = [average, 1, cf]
+    all_p_configs = {}
+    for log in listdir('tmpps'):
+        exact_path = join('tmpps', log)
+        with open(exact_path, "r") as fp:
+            ordering = fp.readline().rstrip()
+            name = fp.readline().rstrip()
+            p_average = float(fp.readline().rstrip())
+            cf = "".join(a for a in fp.readlines())
+            if name in all_configs:
+                print("Updating P's")
+                all_configs[name][0] += p_average
+                all_configs[name][1] += 1
+            else:
+                all_configs[name] = [p_average, 1, cf]
 
     best_average = -1
     best_value = None
+    best_p_average = -1
+    best_p_value = None
     for name, average_cf in all_configs.items():
         average = average_cf[0] / average_cf[1] \
             if average_cf[1] != 0 else average_cf[0]
         if average > best_average:
             best_average = average
             best_value = average_cf[2]
+    for name, average_cf in all_p_configs.items():
+        average = average_cf[0] / average_cf[1] \
+            if average_cf[1] != 0 else average_cf[0]
+        if average > best_p_average:
+            best_p_average = average
+            best_p_value = average_cf[2]
     print("Best average: {}".format(best_average))
     print("Best value:\n{}".format(best_value))
+    print()
+    print("Best probabilty average: {}".format(best_p_average))
+    print("Best probability value:\n{}".format(best_p_value))
