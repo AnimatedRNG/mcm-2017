@@ -16,7 +16,7 @@ from joblib import Parallel, delayed
 TV = namedtuple('TV', 'h v p')
 LaneParams = namedtuple('LaneParams', 'h v p num')
 CascadeParams = namedtuple('CascadeParams', 'm')
-GlobalParams = namedtuple('GlobalParams', 'L g1 g2 t_human')
+GlobalParams = namedtuple('GlobalParams', 'L g1 g2')
 
 g = GlobalParams(7.0, 0, 1, 3.7)  # Used to be 96, 4.8
 
@@ -36,7 +36,7 @@ class Lane(TollElement):
 
     def __init__(self, params, a=-1):
         self.params = params
-        self.L = g.L + self.params.v * g.t_human
+        self.L = g.L
         self.ID = a if a != -1 else uuid4()
 
     def compute_dist(self):
@@ -83,6 +83,9 @@ class Cascade(TollElement):
         return sum(m.params.h for m in merged_lanes)
 
     def get_lanes(self):
+        input_h = sum(elem.params.h for elem in self.elements)
+        output_h = sum(tv.h for tv in self.compute_dist())
+        assert(output_h / input_h <= 1 + 1e-6)
         return [Lane(LaneParams(tv.h, tv.v, tv.p,
                                 self.get_output_lane_names()[i]),
                      self.get_output_lanes()[i].ID)
@@ -547,6 +550,14 @@ def find_optimal(lane_ordering, num_trials=1):
             output_p = sum(lane.compute_dist().p for lane in config[0])
             throughput_score = output_h / input_h  # Could be p or h
             assert(throughput_score < 1)
+            if throughput_score > 1 + 1e6:
+                print("Throughput {} is greater than 1!"
+                      .format(throughput_score))
+                print("Input lanes: \n{}".format(a))
+                print("Output lanes: \n{}".format(config[0]))
+                print("Name: {}\n".format(
+                    "".join(piece.get_name() for piece in config[1])))
+
             b_l = len(lane_ordering) - target_number
             merging_lane_h = sum(struct.get_merging_lane_throughput()
                                  for struct in config[1])
@@ -584,10 +595,10 @@ if __name__ == '__main__':
     if exists("tmp"):
         rmtree("tmp")
     mkdir("tmp")
-    lp = [l for l in generate_lane_perms("", 7)
-          if l.count('a') > 1 and
+    lp = [l for l in generate_lane_perms("", 6)
+          if l.count('a') > 0 and
           (l.count('b') == 1 or l.count('b') == 2) and
-          l.count('c') > 0]
+          (l.count('c') > 0 and l.count('c') < 4)]
     Parallel(n_jobs=8)(delayed(find_optimal)(l) for l in lp[0:7])
 
     all_configs = {}
