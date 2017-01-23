@@ -18,7 +18,7 @@ LaneParams = namedtuple('LaneParams', 'h v p num')
 CascadeParams = namedtuple('CascadeParams', 'm')
 GlobalParams = namedtuple('GlobalParams', 'L g1 g2')
 
-g = GlobalParams(7.0, 0, 1, 3.7)  # Used to be 96, 4.8
+g = GlobalParams(7.0, 0, 1)  # Used to be 96, 4.8
 
 
 class TollElement(object):
