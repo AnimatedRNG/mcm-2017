@@ -136,7 +136,7 @@ class LCascade(Cascade):
         s_b = b.v / b.h - L
         a_b = min(s_b / s_max, 1)
         return (TV(b.h + a_b * a.h,
-                   a.v,
+                   b.v,
                    a.p + b.p - a.p * b.p),)
 
     def compute_length(self):
