@@ -528,7 +528,7 @@ def generate_lane_perms(curr_string, target_length):
         return possibilities
 
 
-def find_optimal(lane_ordering, num_trials=1):
+def find_optimal(lane_ordering, num_trials=100):
     target_number = 2
     bests = []
     configs = {}
@@ -642,7 +642,7 @@ if __name__ == '__main__':
           if l.count('a') > 0 and
           (l.count('b') == 1 or l.count('b') == 2) and
           (l.count('c') > 0 and l.count('c') < 4)]
-    Parallel(n_jobs=8)(delayed(find_optimal)(l) for l in lp[0:7])
+    Parallel(n_jobs=31)(delayed(find_optimal)(l) for l in lp)
 
     all_configs = {}
     for log in listdir('tmp'):
@@ -666,7 +666,7 @@ if __name__ == '__main__':
             name = fp.readline().rstrip()
             p_average = float(fp.readline().rstrip())
             cf = "".join(a for a in fp.readlines())
-            if name in all_configs:
+            if name in all_p_configs:
                 print("Updating P's")
                 all_p_configs[name][0] += p_average
                 all_p_configs[name][1] += 1
