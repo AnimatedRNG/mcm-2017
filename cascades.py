@@ -83,6 +83,9 @@ class Cascade(TollElement):
         all_lanes = self.elements
         merged_lanes = [
             lane for lane in all_lanes if lane.params.num not in output_lanes_ids]
+        i_h = sum(a.params.h for a in all_lanes)
+        m_h = sum(m.params.h for m in merged_lanes)
+        assert(m_h / i_h <= 1)
         return sum(m.params.h for m in merged_lanes)
 
     def get_merging_lane_probability(self):
@@ -582,7 +585,14 @@ def find_optimal(lane_ordering, num_trials=100):
             b_l = len(lane_ordering) - target_number
             merging_lane_h = sum(struct.get_merging_lane_throughput()
                                  for struct in config[1])
-            safety_score = merging_lane_h / input_h
+            total_input_h = 0
+            for struct in config[1]:
+                if isinstance(struct, Lane):
+                    total_input_h += struct.params.h
+                else:
+                    total_input_h += sum(elem.params.h
+                                         for elem in struct.elements)
+            safety_score = merging_lane_h / total_input_h
             assert(safety_score <= 1.0)
             score = g.g1 * safety_score + g.g2 * throughput_score
             name = ""
