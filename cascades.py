@@ -656,6 +656,8 @@ if __name__ == '__main__':
             else:
                 all_configs[name] = [average, 1, cf]
     all_p_configs = {}
+    if not exists('tmpps'):
+        mkdir('tmpps')
     for log in listdir('tmpps'):
         exact_path = join('tmpps', log)
         with open(exact_path, "r") as fp:
