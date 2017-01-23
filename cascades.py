@@ -531,6 +531,71 @@ def generate_lane_perms(curr_string, target_length):
         return possibilities
 
 
+def evaluate_single(input_h,
+                    input_p,
+                    lane_ordering,
+                    config,
+                    target_number):
+    output_h = sum(lane.compute_dist().h for lane in config[0])
+    output_p = sum(lane.compute_dist().p for lane in config[0])
+    throughput_score = output_h / input_h  # Could be p or h
+    probability_score = output_p / input_p
+    assert(throughput_score < 1 + 1e6)
+    assert(probability_score < 1 + 1e6)
+    if throughput_score > 1 + 1e6:
+        print("Throughput {} is greater than 1!"
+              .format(throughput_score))
+        print("Input lanes: \n{}".format(a))
+        print("Output lanes: \n{}".format(config[0]))
+        print("Name: {}\n".format(
+            "".join(piece.get_name() for piece in config[1])))
+    if probability_score > 1 + 1e6:
+        print("Probability {} is greater than 1!"
+              .format(probability_score))
+        print("Input lanes: \n{}".format(a))
+        print("Output lanes: \n{}".format(config[0]))
+        print("Name: {}\n".format(
+            "".join(piece.get_name() for piece in config[1])))
+    b_l = len(lane_ordering) - target_number
+    merging_lane_h = sum(struct.get_merging_lane_throughput()
+                         for struct in config[1])
+    total_input_h = 0
+    for struct in config[1]:
+        if isinstance(struct, Lane):
+            total_input_h += struct.params.h
+        else:
+            total_input_h += sum(elem.params.h
+                                 for elem in struct.elements)
+    safety_score = merging_lane_h / total_input_h
+    assert(safety_score <= 1.0)
+    score = g.g1 * safety_score + g.g2 * throughput_score
+    return (score, probability_score)
+
+
+def evaluate_possibilities(lane_ordering,
+                           a,
+                           possibilities,
+                           configs,
+                           target_number):
+    input_h = sum(lane.compute_dist().h for lane in a)
+    input_p = sum(lane.compute_dist().p for lane in a)
+    for config in possibilities:
+        score, p_score = \
+            evaluate_single(input_h,
+                            input_p,
+                            lane_ordering,
+                            config,
+                            target_number)
+        name = ""
+        for piece in config[1]:
+            name += piece.get_name()
+        if not name in configs:
+            configs[name] = [[score], [p_score], str(config)]
+        else:
+            configs[name][0].append(score)
+            configs[name][1].append(p_score)
+
+
 def find_optimal(lane_ordering, num_trials=100):
     target_number = 2
     bests = []
@@ -556,53 +621,13 @@ def find_optimal(lane_ordering, num_trials=100):
         best_p_scores = [0] * top_n
         best_hs = [None] * top_n
         best_ps = [None] * top_n
-        input_h = sum(lane.compute_dist().h for lane in a)
-        input_p = sum(lane.compute_dist().p for lane in a)
         possibilities = generate(a, target_number)
 
-        for config in possibilities:
-            output_h = sum(lane.compute_dist().h for lane in config[0])
-            output_p = sum(lane.compute_dist().p for lane in config[0])
-            throughput_score = output_h / input_h  # Could be p or h
-            probability_score = output_p / input_p
-            assert(throughput_score < 1 + 1e6)
-            assert(probability_score < 1 + 1e6)
-            if throughput_score > 1 + 1e6:
-                print("Throughput {} is greater than 1!"
-                      .format(throughput_score))
-                print("Input lanes: \n{}".format(a))
-                print("Output lanes: \n{}".format(config[0]))
-                print("Name: {}\n".format(
-                    "".join(piece.get_name() for piece in config[1])))
-            if probability_score > 1 + 1e6:
-                print("Probability {} is greater than 1!"
-                      .format(probability_score))
-                print("Input lanes: \n{}".format(a))
-                print("Output lanes: \n{}".format(config[0]))
-                print("Name: {}\n".format(
-                    "".join(piece.get_name() for piece in config[1])))
-
-            b_l = len(lane_ordering) - target_number
-            merging_lane_h = sum(struct.get_merging_lane_throughput()
-                                 for struct in config[1])
-            total_input_h = 0
-            for struct in config[1]:
-                if isinstance(struct, Lane):
-                    total_input_h += struct.params.h
-                else:
-                    total_input_h += sum(elem.params.h
-                                         for elem in struct.elements)
-            safety_score = merging_lane_h / total_input_h
-            assert(safety_score <= 1.0)
-            score = g.g1 * safety_score + g.g2 * throughput_score
-            name = ""
-            for piece in config[1]:
-                name += piece.get_name()
-            if j == 0:
-                configs[name] = [[score], [probability_score], str(config)]
-            else:
-                configs[name][0].append(score)
-                configs[name][1].append(probability_score)
+        evaluate_possibilities(lane_ordering,
+                               a,
+                               possibilities,
+                               configs,
+                               target_number)
 
     averages = {}
     best_ave = 0
