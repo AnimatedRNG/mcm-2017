@@ -668,10 +668,10 @@ if __name__ == '__main__':
             cf = "".join(a for a in fp.readlines())
             if name in all_configs:
                 print("Updating P's")
-                all_configs[name][0] += p_average
-                all_configs[name][1] += 1
+                all_p_configs[name][0] += p_average
+                all_p_configs[name][1] += 1
             else:
-                all_configs[name] = [p_average, 1, cf]
+                all_p_configs[name] = [p_average, 1, cf]
 
     best_average = -1
     best_value = None
