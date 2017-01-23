@@ -609,7 +609,7 @@ def find_optimal(lane_ordering, num_trials=100):
             best_config_str = str(configs[config][2])
             best = config
         if p_averages[config] > best_p_ave:
-            best_ave = averages[config]
+            best_p_ave = p_averages[config]
             best_p_config_str = str(configs[config][2])
             best_p = config
     with open(join("tmp", str(uuid4())), "w+") as fp:
